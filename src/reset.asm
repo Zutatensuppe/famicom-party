@@ -1,5 +1,8 @@
 .include "constants.inc"
 
+.segment "ZEROPAGE"
+.importzp player_x, player_y, player_speed
+
 .segment "CODE"
 .import main
 .export reset_handler
@@ -27,6 +30,14 @@ clear_oam:
 vblankwait2:
 	BIT PPUSTATUS
 	BPL vblankwait2
+
+  ; initialize zero-page values
+  LDA #$70
+  STA player_x
+  LDA #$a0
+  STA player_y
+  LDA #$02
+  STA player_speed
 
   JMP main
 .endproc

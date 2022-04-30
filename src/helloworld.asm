@@ -1,6 +1,16 @@
 .include "constants.inc"
 .include "header.inc"
 
+.segment "ZEROPAGE"
+player_x: .res 1
+player_y: .res 1
+player_dir: .res 1
+player_speed: .res 1
+
+moon_x: .res 1
+moon_y: .res 1
+.exportzp player_x, player_y, player_speed
+
 .segment "RODATA"
 palettes:
 .byte $0f, $12, $23, $27
@@ -12,12 +22,6 @@ palettes:
 .byte $0f, $2b, $3c, $39
 .byte $0f, $0c, $07, $13
 .byte $0f, $19, $09, $29
-sprites:
-;     Y-pos          X-pos
-.byte $70, $05, $00, $80 ; 1st tile
-.byte $70, $06, $00, $88 ; 2nd tile
-.byte $78, $07, $00, $80 ; 3rd tile
-.byte $78, $08, $00, $88 ; 4th tile
 
 .segment "CODE"
 .proc irq_handler
@@ -30,10 +34,17 @@ sprites:
   LDA #$02
   STA OAMDMA
 
-  ; TODO: use a constant for $2005
+  ; moon
+  JSR update_moon
+  JSR draw_moon
+
+  ; update tiles *after* DMA transfer
+  JSR update_player
+  JSR draw_player
+
   LDA #$00
-  STA $2005
-  STA $2005
+  STA PPUSCROLL
+  STA PPUSCROLL
 
   RTI
 .endproc
@@ -55,13 +66,9 @@ load_palettes:
   CPX #$20
   BNE load_palettes
 
-  LDX #$00
-load_sprites:
-  LDA sprites,X
-  STA $0200,X
-  INX
-  CPX #$10
-  BNE load_sprites
+  LDA #$40
+  STA moon_x
+  STA moon_y
 
   ; write a nametable
   ; big stars first
@@ -137,48 +144,6 @@ load_sprites:
   STX PPUDATA
 
 
-  ; VERY big moon
-  LDA PPUSTATUS
-  LDA #$21
-  STA PPUADDR
-  LDA #$48
-  STA PPUADDR
-  LDX #$30
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$21
-  STA PPUADDR
-  LDA #$49
-  STA PPUADDR
-  LDX #$31
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$21
-  STA PPUADDR
-  LDA #$68
-  STA PPUADDR
-  LDX #$32
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$21
-  STA PPUADDR
-  LDA #$69
-  STA PPUADDR
-  LDX #$33
-  STX PPUDATA
-
-  ; attrib table
-  LDA PPUSTATUS
-  LDA #$23
-  STA PPUADDR
-  LDA #$d2
-  STA PPUADDR
-  LDX #%00110000
-  STX PPUDATA
-
 vblankwait: ; wait for another vblank before continuing
   BIT PPUSTATUS
   BPL vblankwait
@@ -190,6 +155,227 @@ vblankwait: ; wait for another vblank before continuing
   STA PPUMASK
 forever:
   JMP forever
+.endproc
+
+
+.proc update_player
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  ; -----------------------------------
+  ; VERTICAL MOVEMENT
+  DEC player_y
+  ; if player_y > e0 set it to e0
+  LDA #$e0
+  CMP player_y
+  BCS not_out_of_screen_y
+  STA player_y
+not_out_of_screen_y:
+
+  ; -----------------------------------
+  ; HORIZONTAL MOVEMENT
+  LDA player_x
+  CMP #$e0
+  BCC not_at_right_edge
+  ; if BCC is not taken, we are greater than $e0
+  LDA #$00
+  STA player_dir ; start moving left
+  JMP direction_set ; we already chose a direction, so skip the left side check
+
+not_at_right_edge:
+  LDA player_x
+  CMP #$10
+  BCS direction_set
+  ; if BCS not taken, we are less than $10
+  LDA #$01
+  STA player_dir ; start moving right
+
+direction_set:
+  ; now actually update the player_x
+  LDA player_dir
+  CMP #$01
+  BEQ move_right
+  
+  LDA player_x
+  SEC
+  SBC player_speed
+  STA player_x
+
+  JMP exit_subroutine
+
+move_right:
+  LDA player_x
+  CLC
+  ADC player_speed
+  STA player_x
+
+exit_subroutine:
+
+  PLA
+  TAY
+  PLA
+  TAX
+  PLA
+  PLP
+
+  RTS
+.endproc
+
+.proc draw_player
+  ; save registers
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  ; OFFSET in oam buffer
+  LDX #$00
+  LDA player_y
+  PHA
+  LDA player_x
+  PHA
+
+  ; write player ship tile numbers
+  LDA #$05
+  STA $0201,X
+  LDA #$06
+  STA $0205,X
+  LDA #$07
+  STA $0209,X
+  LDA #$08
+  STA $020d,X
+
+  ; write player ship tile attributes
+  ; use palette 0
+  LDA #$00
+  STA $0202,X
+  STA $0206,X
+  STA $020a,X
+  STA $020e,X
+
+  PLA
+  STA $0203,X
+  STA $020b,X
+  CLC
+  ADC #$08
+  STA $0207,X
+  STA $020f,X
+
+  PLA
+  STA $0200,X
+  STA $0204,X
+  CLC
+  ADC #$08
+  STA $0208,X
+  STA $020c,X
+
+  ; restore registers
+  PLA
+  TAY
+  PLA
+  TAX
+  PLA
+  PLP
+
+  RTS
+.endproc
+
+.proc update_moon
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  ; move the moon somehow
+  LDA player_x
+  CMP #$40
+  BCC smaller_than_40
+  INC moon_x
+  JMP end_update_moon
+smaller_than_40:
+  DEC moon_x
+  INC moon_y
+end_update_moon:
+  ; all done
+
+  PLA
+  TAY
+  PLA
+  TAX
+  PLA
+  PLP
+
+  RTS
+.endproc
+
+.proc draw_moon
+  ; save registers
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  ; OFFSET in oam buffer
+  LDX #$10
+  LDA moon_y
+  PHA
+  LDA moon_x
+  PHA
+
+  ; write player ship tile numbers
+  LDA #$30
+  STA $0201,X
+  LDA #$31
+  STA $0205,X
+  LDA #$32
+  STA $0209,X
+  LDA #$33
+  STA $020d,X
+
+  ; write player ship tile attributes
+  ; use palette 0
+  LDA #$00
+  STA $0202,X
+  STA $0206,X
+  STA $020a,X
+  STA $020e,X
+
+  PLA
+  STA $0203,X
+  STA $020b,X
+  CLC
+  ADC #$08
+  STA $0207,X
+  STA $020f,X
+
+  PLA
+  STA $0200,X
+  STA $0204,X
+  CLC
+  ADC #$08
+  STA $0208,X
+  STA $020c,X
+
+
+  ; restore registers
+  PLA
+  TAY
+  PLA
+  TAX
+  PLA
+  PLP
+
+  RTS
 .endproc
 
 .segment "VECTORS"
