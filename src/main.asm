@@ -7,8 +7,9 @@ player_y: .res 1
 player_dir: .res 1
 player_speed: .res 1
 
-moon_x: .res 1
-moon_y: .res 1
+scroll_y: .res 1
+ppuctrl_settings: .res 1
+
 .exportzp player_x, player_y, player_speed
 
 .segment "RODATA"
@@ -18,9 +19,9 @@ palettes:
 .byte $0f, $0c, $07, $13
 .byte $0f, $19, $09, $29
 
-.byte $0f, $12, $23, $27
-.byte $0f, $2b, $3c, $39
-.byte $0f, $0c, $07, $13
+.byte $0f, $2d, $10, $15
+.byte $0f, $19, $09, $29
+.byte $0f, $19, $09, $29
 .byte $0f, $19, $09, $29
 
 .segment "CODE"
@@ -34,25 +35,44 @@ palettes:
   LDA #$02
   STA OAMDMA
 
-  ; moon
-  JSR update_moon
-  JSR draw_moon
-
   ; update tiles *after* DMA transfer
   JSR update_player
   JSR draw_player
 
+  ; set the scroll
+  LDA scroll_y
+  CMP #$00
+  BNE set_scroll_positions
+  ; if jump is not taken, we have reached 0
+  ; and we need to switch nametables
+  LDA ppuctrl_settings
+  EOR #%00000010 ; flip the 2nd bit
+  STA ppuctrl_settings
+  STA PPUCTRL
+  LDA #240
+  STA scroll_y
+
+set_scroll_positions:
   LDA #$00
-  STA PPUSCROLL
-  STA PPUSCROLL
+  STA PPUSCROLL ; scroll X
+  DEC scroll_y
+  LDA scroll_y
+  STA PPUSCROLL ; scroll Y
 
   RTI
 .endproc
 
 .import reset_handler
 
+.import draw_starfield
+.import draw_objects
+
 .export main
 .proc main
+  ; set the initial scroll to 239 (max vertical scroll)
+  LDA #239
+  STA scroll_y
+
   ; write a palette
   LDX PPUSTATUS
   LDX #$3f
@@ -66,89 +86,20 @@ load_palettes:
   CPX #$20
   BNE load_palettes
 
-  LDA #$40
-  STA moon_x
-  STA moon_y
+  LDX #$20
+  JSR draw_starfield
 
-  ; write a nametable
-  ; big stars first
-  LDX #$2f  ; big star index in sprite table
+  LDX #$28
+  JSR draw_starfield
 
-  LDA PPUSTATUS
-  LDA #$20
-  STA PPUADDR
-  LDA #$6b
-  STA PPUADDR
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$20
-  STA PPUADDR
-  LDA #$ba
-  STA PPUADDR
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$21
-  STA PPUADDR
-  LDA #$65
-  STA PPUADDR
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$22
-  STA PPUADDR
-  LDA #$66
-  STA PPUADDR
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$23
-  STA PPUADDR
-  LDA #$0e
-  STA PPUADDR
-  STX PPUDATA
-
-
-  ; VERY big star
-  LDA PPUSTATUS
-  LDA #$22
-  STA PPUADDR
-  LDA #$54
-  STA PPUADDR
-  LDX #$29
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$22
-  STA PPUADDR
-  LDA #$55
-  STA PPUADDR
-  LDX #$2a
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$22
-  STA PPUADDR
-  LDA #$74
-  STA PPUADDR
-  LDX #$2b
-  STX PPUDATA
-
-  LDA PPUSTATUS
-  LDA #$22
-  STA PPUADDR
-  LDA #$75
-  STA PPUADDR
-  LDX #$2c
-  STX PPUDATA
-
+  JSR draw_objects
 
 vblankwait: ; wait for another vblank before continuing
   BIT PPUSTATUS
   BPL vblankwait
 
   LDA #%10010000 ; turn on NMIs, sprites use first pattern table
+  STA ppuctrl_settings
   STA PPUCTRL
 
   LDA #%00011110 ; turn on screen
@@ -286,100 +237,8 @@ exit_subroutine:
   RTS
 .endproc
 
-.proc update_moon
-  PHP
-  PHA
-  TXA
-  PHA
-  TYA
-  PHA
-
-  ; move the moon somehow
-  LDA player_x
-  CMP #$40
-  BCC smaller_than_40
-  INC moon_x
-  JMP end_update_moon
-smaller_than_40:
-  DEC moon_x
-  INC moon_y
-end_update_moon:
-  ; all done
-
-  PLA
-  TAY
-  PLA
-  TAX
-  PLA
-  PLP
-
-  RTS
-.endproc
-
-.proc draw_moon
-  ; save registers
-  PHP
-  PHA
-  TXA
-  PHA
-  TYA
-  PHA
-
-  ; OFFSET in oam buffer
-  LDX #$10
-  LDA moon_y
-  PHA
-  LDA moon_x
-  PHA
-
-  ; write player ship tile numbers
-  LDA #$30
-  STA $0201,X
-  LDA #$31
-  STA $0205,X
-  LDA #$32
-  STA $0209,X
-  LDA #$33
-  STA $020d,X
-
-  ; write player ship tile attributes
-  ; use palette 0
-  LDA #$00
-  STA $0202,X
-  STA $0206,X
-  STA $020a,X
-  STA $020e,X
-
-  PLA
-  STA $0203,X
-  STA $020b,X
-  CLC
-  ADC #$08
-  STA $0207,X
-  STA $020f,X
-
-  PLA
-  STA $0200,X
-  STA $0204,X
-  CLC
-  ADC #$08
-  STA $0208,X
-  STA $020c,X
-
-
-  ; restore registers
-  PLA
-  TAY
-  PLA
-  TAX
-  PLA
-  PLP
-
-  RTS
-.endproc
-
 .segment "VECTORS"
 .addr nmi_handler, reset_handler, irq_handler
 
 .segment "CHR"
-.incbin "starfield.chr"
+.incbin "scrolling.chr"
