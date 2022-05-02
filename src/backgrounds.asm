@@ -196,6 +196,20 @@
 	LDX #$3b
 	STX PPUDATA
 
+  ; SATELITE 1
+	LDA PPUSTATUS
+	LDA #$23
+	STA PPUADDR
+	LDA #$01
+	STA PPUADDR
+	LDX #$34
+	STX PPUDATA
+	LDX #$35
+	STX PPUDATA
+	LDX #$36
+	STX PPUDATA
+
+
 ; nametable 2 additions: big galaxy, space station
 	LDA PPUSTATUS
 	LDA #$28
@@ -318,6 +332,19 @@
 	STA PPUDATA
 	STA PPUDATA
 
+  ; SATELITE 2 
+	LDA PPUSTATUS
+	LDA #$28
+	STA PPUADDR
+	LDA #$58
+	STA PPUADDR
+	LDX #$34
+	STX PPUDATA
+	LDX #$35
+	STX PPUDATA
+	LDX #$36
+	STX PPUDATA
+
 	; finally, attribute tables
   LDA PPUSTATUS
   LDA #$23
@@ -343,5 +370,17 @@
   LDA #%00001010
   STA PPUDATA
 
+  ; attribute table
+  LDA PPUSTATUS
+  LDA #$2b
+  STA PPUADDR
+  LDA #$c6
+  STA PPUADDR
+  LDA #%11110000
+  STA PPUDATA
+
   RTS
 .endproc
+
+; 01  23
+; 45  67
