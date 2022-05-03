@@ -13,9 +13,10 @@ scroll_y: .res 1
 buttons: .res 1
 ppuctrl_settings: .res 1
 
-cannon_1_x: .res 1
-cannon_1_y: .res 1
+cooldown: .res 1
 
+; 4 cannons (x/y positions)
+cannons: .res 8
 .exportzp player_x, player_y, player_speed
 
 .segment "RODATA"
@@ -132,9 +133,22 @@ set_scroll_positions:
   LDA #239
   STA scroll_y
 
-  ; 'hide' cannon 1 off screen
-  LDA #$e0 
-  STA cannon_1_y
+  LDA #05
+  STA cooldown
+
+  ; initialize cannons
+  ; this means hide them off screen
+  ; (setting y = $fe and x = 0)
+  LDX #$00
+hide_cannon:
+  LDA #$fe 
+  STA cannons,X
+  INX
+  LDA #$00 
+  STA cannons,X
+  INX
+  CPX #$08
+  BNE hide_cannon
 
   ; write a palette
   LDX PPUSTATUS
@@ -180,14 +194,19 @@ forever:
   TYA
   PHA
 
-  ; if y > $e0: dont update anymore, stay hidden off screen
-  LDA cannon_1_y
+  ; update visible cannons
+  LDX #$00
+update_single_cannon:
+  LDA cannons,X
   CMP #$e0
   BCS movement_finished
   SBC #3
-  STA cannon_1_y
-
+  STA cannons,X
 movement_finished:
+  INX
+  INX
+  CPX #$08
+  BNE update_single_cannon
 
   PLA
   TAY
@@ -208,6 +227,15 @@ movement_finished:
   TYA
   PHA
 
+; if cooldown > 0: cooldown--
+  LDA cooldown
+  BEQ dont_adjust_cd
+  SBC #1
+  STA cooldown
+dont_adjust_cd:
+
+
+
   ; -----------------------------------
   ; A BUTTON
   LDA buttons
@@ -217,11 +245,40 @@ movement_finished:
   ; Pressing A
 
   ; shoot tha cannon!
+  ; find a cannon slot that is 
+  ; currently not used
+  ; we have 4 slots
+
+  LDA cooldown
+  BNE after_a
+  
+  LDX #$00
+check_next:
+  CPX #$08
+  BEQ after_a
+
+  ; load the y coord of the cannon
+  LDA cannons,X
+  ; if its y coord is > $e0
+  CMP #$e0
+  BCS use_canon ; CANON is FREE, use it!
+
+  ; canon is not FREE, dont use
+  INX
+  INX
+  JMP check_next
+
+use_canon:
+  ; found a good cannon to be shot
   LDA player_y
-  STA cannon_1_y
+  STA cannons,X
   LDA player_x
   ADC #$03
-  STA cannon_1_x
+  INX
+  STA cannons,X
+
+  LDA #05
+  STA cooldown
 
 after_a:
   
@@ -277,45 +334,6 @@ not_pressing_left:
 
 after_x_movement:
 
-;   ; -----------------------------------
-;   ; HORIZONTAL MOVEMENT
-;   LDA player_x
-;   CMP #$e0
-;   BCC not_at_right_edge
-;   ; if BCC is not taken, we are greater than $e0
-;   LDA #$00
-;   STA player_dir ; start moving left
-;   JMP direction_set ; we already chose a direction, so skip the left side check
-
-; not_at_right_edge:
-;   LDA player_x
-;   CMP #$10
-;   BCS direction_set
-;   ; if BCS not taken, we are less than $10
-;   LDA #$01
-;   STA player_dir ; start moving right
-
-; direction_set:
-;   ; now actually update the player_x
-;   LDA player_dir
-;   CMP #$01
-;   BEQ move_right
-  
-;   LDA player_x
-;   SEC
-;   SBC player_speed
-;   STA player_x
-
-;   JMP exit_subroutine
-
-; move_right:
-;   LDA player_x
-;   CLC
-;   ADC player_speed
-;   STA player_x
-
-; exit_subroutine:
-
   PLA
   TAY
   PLA
@@ -334,14 +352,25 @@ after_x_movement:
   TYA
   PHA
 
-  LDA cannon_1_y
-  STA $0210
+  LDY #0
+  LDX #0
+next_cannon:
+  LDA cannons,X
+  STA $0210,Y
+  INY
   LDA #$09
-  STA $0211
+  STA $0210,Y
+  INY
   LDA #$00
-  STA $0212
-  LDA cannon_1_x
-  STA $0213
+  STA $0210,Y
+  INY
+  INX
+  LDA cannons,X
+  STA $0210,Y
+  INY
+  INX
+  CPX #$08
+  BNE next_cannon
 
   PLA
   TAY
@@ -363,46 +392,39 @@ after_x_movement:
   TYA
   PHA
 
-  ; OFFSET in oam buffer
-  LDX #$00
-  LDA player_y
-  PHA
-  LDA player_x
-  PHA
-
   ; write player ship tile numbers
   LDA #$05
-  STA $0201,X
+  STA $0201
   LDA #$06
-  STA $0205,X
+  STA $0205
   LDA #$07
-  STA $0209,X
+  STA $0209
   LDA #$08
-  STA $020d,X
+  STA $020d
 
   ; write player ship tile attributes
   ; use palette 0
   LDA #$00
-  STA $0202,X
-  STA $0206,X
-  STA $020a,X
-  STA $020e,X
+  STA $0202
+  STA $0206
+  STA $020a
+  STA $020e
 
-  PLA
-  STA $0203,X
-  STA $020b,X
+  LDA player_x
+  STA $0203
+  STA $020b
   CLC
   ADC #$08
-  STA $0207,X
-  STA $020f,X
+  STA $0207
+  STA $020f
 
-  PLA
-  STA $0200,X
-  STA $0204,X
+  LDA player_y
+  STA $0200
+  STA $0204
   CLC
   ADC #$08
-  STA $0208,X
-  STA $020c,X
+  STA $0208
+  STA $020c
 
   ; restore registers
   PLA
