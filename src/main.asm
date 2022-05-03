@@ -15,8 +15,12 @@ ppuctrl_settings: .res 1
 
 cooldown: .res 1
 
-; 4 cannons (x/y positions)
+; 4 cannons (y/x positions)
 cannons: .res 8
+
+; 4 enemies (y/hp/x positions)
+enemies: .res 12
+
 .exportzp player_x, player_y, player_speed
 
 .segment "RODATA"
@@ -45,11 +49,15 @@ palettes:
   JSR readjoy
 
   JSR update_cannon
-  JSR draw_cannon
+  JSR update_enemies
+  JSR update_player
+
+  JSR do_collision_detection
 
   ; update tiles *after* DMA transfer
-  JSR update_player
+  JSR draw_bullets
   JSR draw_player
+  JSR draw_enemies
 
   ; set the scroll
   LDA scroll_y
@@ -136,6 +144,8 @@ set_scroll_positions:
   LDA #05
   STA cooldown
 
+  JSR init_enemies
+
   ; initialize cannons
   ; this means hide them off screen
   ; (setting y = $fe and x = 0)
@@ -218,6 +228,34 @@ movement_finished:
   RTS
 .endproc
 
+.proc update_enemies
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  LDX #$02
+  LDA enemies,X
+  ADC #01
+  STA enemies,X
+
+  LDX #$01
+  LDA enemies,X
+  CMP #$00
+  BNE exit_subroutine
+  JSR init_enemies
+exit_subroutine:
+
+  PLA
+  TAY
+  PLA
+  TAX
+  PLA
+  PLP
+  RTS
+.endproc
 
 .proc update_player
   PHP
@@ -344,7 +382,130 @@ after_x_movement:
   RTS
 .endproc
 
-.proc draw_cannon
+
+.proc init_enemies
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  ; initialize enemies
+  LDX #$00
+  LDA #40
+  STA enemies,X
+  INX
+  LDA #10
+  STA enemies,X
+  INX
+  LDA #40
+  STA enemies,X
+  INX
+
+  PLA
+  TAY
+  PLA
+  TAX
+  PLA
+  PLP
+
+  RTS
+.endproc
+
+; ---------------------------------------------
+
+
+
+.proc do_collision_detection
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  ; no collision:
+  ; if canon.x + 8 < enemy.x: no col
+  ; elif canon.x > enemy.x + 8: no col
+  ; elif canon.y + 8 < enemy.y: no col
+  ; elif canon.y > enemy.y + 8: no col
+  ; else col
+
+
+; check collision Y
+  LDX #0
+  ; if canon.y + 8 < enemy.y: no col
+  LDA cannons,X      ; canon.y + 8
+  ADC #8
+  CMP enemies        ; enemy.y
+  BCC no_col_y
+
+  ; if canon.y - 8 > enemy.y: no col
+  LDA cannons,X      ; canon.y
+  SBC #8
+  CMP enemies
+  BCS no_col_y
+  JMP col_y
+
+no_col_y:
+  INX
+  JMP no_col
+
+
+; when there was a collision on Y
+; do the check collision X
+col_y:
+  INX
+
+  LDY #2
+  LDA cannons,X
+  ADC #8
+  CMP enemies,Y
+  BCC no_col_x
+
+  LDA cannons,X
+  SBC #8
+  CMP enemies,Y
+  BCS no_col_x
+
+col:
+; collision detected!
+  DEX
+  LDA #$f0
+  STA cannons,X
+  INX
+
+  LDY #1
+  LDA enemies,Y
+  CMP #0
+  BEQ no_change
+  SBC #1
+  STA enemies,Y
+no_change:
+
+no_col_x:
+  JMP no_col
+
+
+no_col:
+
+  PLA
+  TAY
+  PLA
+  TAX
+  PLA
+  PLP
+
+  RTS
+.endproc
+
+
+; ---------------------------------------------
+
+
+
+.proc draw_bullets
   PHP
   PHA
   TXA
@@ -354,7 +515,7 @@ after_x_movement:
 
   LDY #0
   LDX #0
-next_cannon:
+next_entity:
   LDA cannons,X
   STA $0210,Y
   INY
@@ -370,7 +531,7 @@ next_cannon:
   INY
   INX
   CPX #$08
-  BNE next_cannon
+  BNE next_entity
 
   PLA
   TAY
@@ -427,6 +588,68 @@ next_cannon:
   STA $020c
 
   ; restore registers
+  PLA
+  TAY
+  PLA
+  TAX
+  PLA
+  PLP
+
+  RTS
+.endproc
+
+.proc draw_enemies
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  LDY #0
+  LDX #0
+next_entity:
+  LDA #$f0
+  STA $0220,Y
+  
+  ;; check hp
+  INX
+  LDA enemies,X
+  BEQ exit_subroutine
+  DEX
+
+
+  LDA enemies,X
+  STA $0220,Y
+  INX
+  INY
+
+  LDA #$0a
+  STA $0220,Y
+  INY
+
+  LDA enemies,X
+  CMP #$05
+  BCS green
+red:
+  LDA #$00
+  JMP do
+green:
+  LDA #$01
+do:
+  STA $0220,Y
+  INX
+  INY
+
+  LDA enemies,X
+  STA $0220,Y
+  INY
+  INX
+
+  ; CPX #$08
+  ; BNE next_entity
+
+exit_subroutine:
   PLA
   TAY
   PLA
