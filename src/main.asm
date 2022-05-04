@@ -18,8 +18,8 @@ cooldown: .res 1
 ; 4 bullets (y/x positions)
 bullets: .res 8
 
-; 4 enemies (y/x/hp positions)
-enemies: .res 12
+; 4 enemies (y/x/hp/dir positions)
+enemies: .res 16
 
 .exportzp player_x, player_y, player_speed
 
@@ -216,6 +216,44 @@ movement_finished:
   RTS
 .endproc
 
+
+.proc update_enemy
+  ; read the direction of the enemy
+  INX
+  INX
+  INX
+  LDA enemies,X
+  AND #%00000001
+  CMP #%00000001
+  BEQ move_right
+  JMP move_left
+
+move_right:
+  DEX
+  DEX
+  INC enemies,X
+  JMP check_respawn
+
+move_left:
+  DEX
+  DEX
+  DEC enemies,X
+  JMP check_respawn
+
+check_respawn:
+  ; check enemy hp
+  INX
+  LDA enemies,X
+  BNE exit_subroutine
+  ; respawn
+  DEX 
+  DEX
+  JSR init_enemy
+exit_subroutine:
+
+  RTS
+.endproc
+
 .proc update_enemies
   PHP
   PHA
@@ -224,19 +262,12 @@ movement_finished:
   TYA
   PHA
 
-  ; move the enemy to the right
-  LDX #$01
-  LDA enemies,X
-  ADC #01
-  STA enemies,X
+  ; enemy index
+  LDX #$00
+  JSR update_enemy
 
-  ; check enemy hp
-  INX
-  LDA enemies,X
-  BNE exit_subroutine
-  ; respawn
-  JSR init_enemies
-exit_subroutine:
+  LDX #$04
+  JSR update_enemy
 
   PLA
   TAY
@@ -388,6 +419,46 @@ next_bullet:
   RTS
 .endproc
 
+.proc init_enemy
+  LDY #40
+  TXA
+compare_value:
+  CMP #00
+  BEQ use_value
+  INY
+  INY
+  INY
+  INY
+  SBC #01
+  JMP compare_value
+
+
+use_value:
+  TYA
+  STA enemies,X
+  INX
+  LDA #40
+  STA enemies,X
+  INX
+  LDA #10
+  STA enemies,X
+  INX
+
+  DEX
+  DEX
+  DEX
+  TXA
+  LSR
+  LSR
+  AND #%00000001 ; direction 00 = right
+  INX
+  INX
+  INX
+  STA enemies,X
+
+  RTS
+.endproc
+
 .proc init_enemies
   PHP
   PHA
@@ -398,15 +469,10 @@ next_bullet:
 
   ; initialize enemies
   LDX #$00
-  LDA #40
-  STA enemies,X
-  INX
-  LDA #40
-  STA enemies,X
-  INX
-  LDA #10
-  STA enemies,X
-  INX
+  JSR init_enemy
+
+  LDX #$04
+  JSR init_enemy
 
   PLA
   TAY
@@ -508,6 +574,23 @@ exit_subroutine:
 
   LDX #06
   LDY #00
+  JSR collision_check
+
+
+  LDX #00
+  LDY #04
+  JSR collision_check
+  
+  LDX #02
+  LDY #04
+  JSR collision_check
+
+  LDX #04
+  LDY #04
+  JSR collision_check
+
+  LDX #06
+  LDY #04
   JSR collision_check
 
 
@@ -619,20 +702,16 @@ next_entity:
   RTS
 .endproc
 
-.proc draw_enemies
-  PHP
-  PHA
-  TXA
-  PHA
-  TYA
-  PHA
 
-  LDY #0
-  LDX #0
-next_entity:
+.proc draw_enemy
+  ; enemy index = X
+  TXA
+  TAY ; X is same as Y for our purposes here (enemy struct is 4 byte, as well as the drawing struct)
+
+  ; put enemy to off screen.
   LDA #$f0
-  STA $0220,Y
-  
+  STA $0220,X
+
   ;; check hp
   INX
   INX
@@ -641,12 +720,13 @@ next_entity:
   DEX
   DEX
 
-
+  ; Y position
   LDA enemies,X
   STA $0220,Y
   INX
   INY
 
+  ; Enemy Tile
   LDA #$0a
   STA $0220,Y
   INY
@@ -668,13 +748,31 @@ do:
 
   LDA enemies,X
   STA $0220,Y
-  INY
-  INX
-
-  ; CPX #$08
-  ; BNE next_entity
 
 exit_subroutine:
+  RTS
+.endproc
+
+.proc draw_enemies
+  PHP
+  PHA
+  TXA
+  PHA
+  TYA
+  PHA
+
+  LDX #00
+  JSR draw_enemy
+
+  LDX #04
+  JSR draw_enemy
+
+  LDX #08
+  JSR draw_enemy
+
+  LDX #12
+  JSR draw_enemy
+
   PLA
   TAY
   PLA
