@@ -15,10 +15,10 @@ ppuctrl_settings: .res 1
 
 cooldown: .res 1
 
-; 4 cannons (y/x positions)
-cannons: .res 8
+; 4 bullets (y/x positions)
+bullets: .res 8
 
-; 4 enemies (y/hp/x positions)
+; 4 enemies (y/x/hp positions)
 enemies: .res 12
 
 .exportzp player_x, player_y, player_speed
@@ -146,19 +146,7 @@ set_scroll_positions:
 
   JSR init_enemies
 
-  ; initialize cannons
-  ; this means hide them off screen
-  ; (setting y = $fe and x = 0)
-  LDX #$00
-hide_cannon:
-  LDA #$fe 
-  STA cannons,X
-  INX
-  LDA #$00 
-  STA cannons,X
-  INX
-  CPX #$08
-  BNE hide_cannon
+  JSR init_bullets
 
   ; write a palette
   LDX PPUSTATUS
@@ -204,14 +192,14 @@ forever:
   TYA
   PHA
 
-  ; update visible cannons
+  ; update visible bullets
   LDX #$00
 update_single_cannon:
-  LDA cannons,X
+  LDA bullets,X
   CMP #$e0
   BCS movement_finished
   SBC #3
-  STA cannons,X
+  STA bullets,X
 movement_finished:
   INX
   INX
@@ -236,15 +224,17 @@ movement_finished:
   TYA
   PHA
 
-  LDX #$02
+  ; move the enemy to the right
+  LDX #$01
   LDA enemies,X
   ADC #01
   STA enemies,X
 
-  LDX #$01
+  ; check enemy hp
+  INX
   LDA enemies,X
-  CMP #$00
   BNE exit_subroutine
+  ; respawn
   JSR init_enemies
 exit_subroutine:
 
@@ -296,7 +286,7 @@ check_next:
   BEQ after_a
 
   ; load the y coord of the cannon
-  LDA cannons,X
+  LDA bullets,X
   ; if its y coord is > $e0
   CMP #$e0
   BCS use_canon ; CANON is FREE, use it!
@@ -309,11 +299,11 @@ check_next:
 use_canon:
   ; found a good cannon to be shot
   LDA player_y
-  STA cannons,X
+  STA bullets,X
   LDA player_x
   ADC #$03
   INX
-  STA cannons,X
+  STA bullets,X
 
   LDA #05
   STA cooldown
@@ -383,6 +373,21 @@ after_x_movement:
 .endproc
 
 
+.proc init_bullets
+  ; initialize bullets
+  ; this means hide them off screen
+  ; (setting y = $fe)
+  LDX #$00
+next_bullet:
+  LDA #$fe 
+  STA bullets,X
+  INX
+  INX
+  CPX #$08
+  BNE next_bullet
+  RTS
+.endproc
+
 .proc init_enemies
   PHP
   PHA
@@ -396,10 +401,10 @@ after_x_movement:
   LDA #40
   STA enemies,X
   INX
-  LDA #10
+  LDA #40
   STA enemies,X
   INX
-  LDA #40
+  LDA #10
   STA enemies,X
   INX
 
@@ -416,6 +421,70 @@ after_x_movement:
 ; ---------------------------------------------
 
 
+;
+; Check collision between Bullet X and Enemy Y
+;
+.proc collision_check
+  ; X = BULLET index
+  ; Y = ENEMY index
+
+  ; no collision:
+  ; if bullet.y + 8 < enemy.y: no col
+  ; if bullet.y - 8 > enemy.y: no col
+  ; if bullet.x + 8 < enemy.x: no col
+  ; if bullet.x - 8 > enemy.x: no col
+  ; else col
+
+
+; check collision Y
+  ; if canon.y + 8 < enemy.y: no col
+  LDA bullets,X        ; canon.y + 8
+  ADC #8
+  CMP enemies,Y        ; enemy.y
+  BCC exit_subroutine
+
+  ; if canon.y - 8 > enemy.y: no col
+  LDA bullets,X        ; canon.y - 8
+  SBC #8
+  CMP enemies,Y        ; enemy.y
+  BCS exit_subroutine
+
+; when there was a collision on Y
+; do the check collision X
+  INX
+
+  INY
+  LDA bullets,X       
+  ADC #8              ; bullet.x + 8
+  CMP enemies,Y       ; enemy.x
+  BCC exit_subroutine
+
+  LDA bullets,X
+  SBC #8              ; bullet.x - 8
+  CMP enemies,Y       ; enemy.x
+  BCS exit_subroutine
+
+; collision detected!
+
+  ; move bullet out of screen
+  DEX
+  LDA #$f0
+  STA bullets,X
+  INX
+
+  ; decrease the enemy HP if not already 0
+  INY
+  LDA enemies,Y
+  CMP #0
+  BEQ exit_subroutine
+  SBC #1
+  STA enemies,Y
+
+exit_subroutine:
+
+  RTS
+.endproc
+
 
 .proc do_collision_detection
   PHP
@@ -425,70 +494,22 @@ after_x_movement:
   TYA
   PHA
 
-  ; no collision:
-  ; if canon.x + 8 < enemy.x: no col
-  ; elif canon.x > enemy.x + 8: no col
-  ; elif canon.y + 8 < enemy.y: no col
-  ; elif canon.y > enemy.y + 8: no col
-  ; else col
+  LDX #00
+  LDY #00
+  JSR collision_check
+  
+  LDX #02
+  LDY #00
+  JSR collision_check
 
+  LDX #04
+  LDY #00
+  JSR collision_check
 
-; check collision Y
-  LDX #0
-  ; if canon.y + 8 < enemy.y: no col
-  LDA cannons,X      ; canon.y + 8
-  ADC #8
-  CMP enemies        ; enemy.y
-  BCC no_col_y
+  LDX #06
+  LDY #00
+  JSR collision_check
 
-  ; if canon.y - 8 > enemy.y: no col
-  LDA cannons,X      ; canon.y
-  SBC #8
-  CMP enemies
-  BCS no_col_y
-  JMP col_y
-
-no_col_y:
-  INX
-  JMP no_col
-
-
-; when there was a collision on Y
-; do the check collision X
-col_y:
-  INX
-
-  LDY #2
-  LDA cannons,X
-  ADC #8
-  CMP enemies,Y
-  BCC no_col_x
-
-  LDA cannons,X
-  SBC #8
-  CMP enemies,Y
-  BCS no_col_x
-
-col:
-; collision detected!
-  DEX
-  LDA #$f0
-  STA cannons,X
-  INX
-
-  LDY #1
-  LDA enemies,Y
-  CMP #0
-  BEQ no_change
-  SBC #1
-  STA enemies,Y
-no_change:
-
-no_col_x:
-  JMP no_col
-
-
-no_col:
 
   PLA
   TAY
@@ -516,7 +537,7 @@ no_col:
   LDY #0
   LDX #0
 next_entity:
-  LDA cannons,X
+  LDA bullets,X
   STA $0210,Y
   INY
   LDA #$09
@@ -526,7 +547,7 @@ next_entity:
   STA $0210,Y
   INY
   INX
-  LDA cannons,X
+  LDA bullets,X
   STA $0210,Y
   INY
   INX
@@ -614,8 +635,10 @@ next_entity:
   
   ;; check hp
   INX
+  INX
   LDA enemies,X
   BEQ exit_subroutine
+  DEX
   DEX
 
 
@@ -628,6 +651,8 @@ next_entity:
   STA $0220,Y
   INY
 
+  ; HP
+  INX
   LDA enemies,X
   CMP #$05
   BCS green
@@ -638,7 +663,7 @@ green:
   LDA #$01
 do:
   STA $0220,Y
-  INX
+  DEX
   INY
 
   LDA enemies,X
