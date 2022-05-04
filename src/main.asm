@@ -269,6 +269,12 @@ exit_subroutine:
   LDX #$04
   JSR update_enemy
 
+  LDX #$08
+  JSR update_enemy
+
+  LDX #$0c
+  JSR update_enemy
+
   PLA
   TAY
   PLA
@@ -474,6 +480,12 @@ use_value:
   LDX #$04
   JSR init_enemy
 
+  LDX #$08
+  JSR init_enemy
+
+  LDX #$0c
+  JSR init_enemy
+
   PLA
   TAY
   PLA
@@ -563,15 +575,12 @@ exit_subroutine:
   LDX #00
   LDY #00
   JSR collision_check
-  
   LDX #02
   LDY #00
   JSR collision_check
-
   LDX #04
   LDY #00
   JSR collision_check
-
   LDX #06
   LDY #00
   JSR collision_check
@@ -580,17 +589,42 @@ exit_subroutine:
   LDX #00
   LDY #04
   JSR collision_check
-  
   LDX #02
   LDY #04
   JSR collision_check
-
   LDX #04
   LDY #04
   JSR collision_check
-
   LDX #06
   LDY #04
+  JSR collision_check
+
+
+  LDX #00
+  LDY #08
+  JSR collision_check
+  LDX #02
+  LDY #08
+  JSR collision_check
+  LDX #04
+  LDY #08
+  JSR collision_check
+  LDX #06
+  LDY #08
+  JSR collision_check
+
+
+  LDX #00
+  LDY #$0c
+  JSR collision_check
+  LDX #02
+  LDY #$0c
+  JSR collision_check
+  LDX #04
+  LDY #$0c
+  JSR collision_check
+  LDX #06
+  LDY #$0c
   JSR collision_check
 
 
